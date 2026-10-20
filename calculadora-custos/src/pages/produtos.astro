@@ -1,0 +1,155 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Os meus produtos · CalculaPreço">
+  <div class="page-head">
+    <h1>Os meus produtos</h1>
+    <p id="summary">A carregar…</p>
+  </div>
+
+  <div class="toolbar">
+    <label class="search">
+      <input id="search" type="search" placeholder="🔍 Pesquisar produto…" autocomplete="off" aria-label="Pesquisar produto" />
+    </label>
+    <a class="btn primary" href="/">＋ Novo produto</a>
+  </div>
+
+  <div id="grid" class="products"></div>
+
+  <div id="empty" class="empty">
+    <span class="emoji">🌸</span>
+    <h2 id="empty-title">Ainda não tens produtos guardados</h2>
+    <p id="empty-text">Calcula o preço de um produto e guarda-o para o encontrares aqui.</p>
+    <a class="btn primary" href="/">Ir para a calculadora</a>
+  </div>
+</Layout>
+
+<script>
+  import {
+    atualizarBadge,
+    calcular,
+    deleteProduto,
+    esc,
+    formatEUR,
+    formatNum,
+    formatTempo,
+    getProdutos,
+    saveProduto,
+    toast,
+    uid,
+  } from '../scripts/lib.js';
+
+  const $ = (s) => document.querySelector(s);
+  const grid = $('#grid');
+  const empty = $('#empty');
+  const search = $('#search');
+  const summary = $('#summary');
+
+  function cartao(p, i) {
+    const r = calcular(p);
+    const data = new Date(p.atualizadoEm || p.criadoEm || Date.now()).toLocaleDateString('pt-PT');
+    const mats = r.materiais.filter((m) => m.nome || m.custo > 0);
+    const listaMats = mats.length
+      ? `<details class="mats">
+           <summary>Ver materiais (${mats.length})</summary>
+           <ul>${mats
+             .map(
+               (m) =>
+                 `<li><span>${esc(m.nome || 'Sem nome')}</span><strong>${formatEUR(m.custo)}</strong></li>`,
+             )
+             .join('')}</ul>
+         </details>`
+      : '';
+
+    return `
+      <article class="product" data-id="${esc(p.id)}" style="animation-delay:${Math.min(i, 8) * 60}ms">
+        <div>
+          <h3>${esc(p.nome)}</h3>
+          <span class="date">Atualizado a ${data}</span>
+        </div>
+        <div class="pv"><small>Preço de venda</small><strong>${formatEUR(r.precoVenda)}</strong></div>
+        <div class="chips">
+          <span class="chip c1">Materiais ${formatEUR(r.custoMateriais)}</span>
+          <span class="chip c2">Mão de obra ${formatEUR(r.custoMaoObra)}</span>
+          <span class="chip c3">Custo ${formatEUR(r.custoTotal)}</span>
+          <span class="chip c4">Margem ${formatNum(r.margem)}%</span>
+          ${num2(p.tempo) > 0 ? `<span class="chip c4">⏱ ${formatTempo(num2(p.tempo), p.unidade)}</span>` : ''}
+        </div>
+        ${listaMats}
+        <div class="actions">
+          <a class="btn soft small" href="/?id=${encodeURIComponent(p.id)}">✏️ Editar</a>
+          <button type="button" class="btn small" data-action="duplicar">📄 Duplicar</button>
+          <button type="button" class="btn small danger" data-action="eliminar">🗑️ Eliminar</button>
+        </div>
+      </article>`;
+  }
+
+  const num2 = (v) => {
+    const n = parseFloat(String(v ?? '').replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+
+  function render() {
+    const q = search.value.trim().toLowerCase();
+    const todos = getProdutos().sort(
+      (a, b) => (b.atualizadoEm || 0) - (a.atualizadoEm || 0),
+    );
+    const lista = todos.filter((p) => (p.nome || '').toLowerCase().includes(q));
+
+    grid.innerHTML = lista.map(cartao).join('');
+
+    const semResultados = todos.length > 0 && lista.length === 0;
+    empty.classList.toggle('show', lista.length === 0);
+    $('#empty-title').textContent = semResultados
+      ? 'Nenhum produto encontrado'
+      : 'Ainda não tens produtos guardados';
+    $('#empty-text').textContent = semResultados
+      ? 'Experimenta pesquisar por outro nome.'
+      : 'Calcula o preço de um produto e guarda-o para o encontrares aqui.';
+
+    summary.textContent =
+      todos.length === 0
+        ? 'Aqui vão aparecer os produtos que guardares.'
+        : `${todos.length} ${todos.length === 1 ? 'produto guardado' : 'produtos guardados'}`;
+
+    atualizarBadge();
+  }
+
+  grid.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const card = btn.closest('.product');
+    const id = card.dataset.id;
+    const produto = getProdutos().find((p) => p.id === id);
+    if (!produto) return;
+
+    if (btn.dataset.action === 'eliminar') {
+      if (!confirm(`Eliminar “${produto.nome}”?`)) return;
+      card.classList.add('leaving');
+      const fim = () => {
+        deleteProduto(id);
+        render();
+        toast('Produto eliminado');
+      };
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) fim();
+      else card.addEventListener('animationend', fim, { once: true });
+    }
+
+    if (btn.dataset.action === 'duplicar') {
+      const agora = Date.now();
+      saveProduto({
+        ...produto,
+        id: uid(),
+        nome: `${produto.nome} (cópia)`,
+        criadoEm: agora,
+        atualizadoEm: agora,
+      });
+      render();
+      toast('Produto duplicado ✨');
+    }
+  });
+
+  search.addEventListener('input', render);
+  render();
+</script>

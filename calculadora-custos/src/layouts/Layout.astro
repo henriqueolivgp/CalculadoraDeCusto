@@ -1,0 +1,53 @@
+---
+import '../styles/global.css';
+
+const { title = 'CalculaPreço' } = Astro.props;
+const path = Astro.url.pathname.replace(/\/$/, '') || '/';
+---
+
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Calcula o custo dos teus produtos e o preço de venda ideal." />
+    <title>{title}</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🧮%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="blobs" aria-hidden="true"><span></span><span></span><span></span></div>
+
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="logo">🧮</span>
+        <span>Calcula<strong>Preço</strong></span>
+      </a>
+      <nav class="nav" aria-label="Navegação principal">
+        <a href="/" class:list={[{ active: path === '/' }]}>Calculadora</a>
+        <a href="/produtos" class:list={[{ active: path === '/produtos' }]}>
+          Os meus produtos <span class="badge" id="count-badge">0</span>
+        </a>
+      </nav>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      import { atualizarBadge } from '../scripts/lib.js';
+      atualizarBadge();
+    </script>
+  </body>
+</html>

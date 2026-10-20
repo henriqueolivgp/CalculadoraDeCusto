@@ -1,0 +1,339 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Calculadora · CalculaPreço">
+  <div class="page-head">
+    <h1>Calculadora de custos</h1>
+    <p>Junta os materiais, o tempo de trabalho e a tua margem para descobrir o preço certo.</p>
+  </div>
+
+  <section class="grid">
+    <div class="stack">
+      <div class="card">
+        <h2 class="card-title"><span><span class="dot pink">🏷️</span>Produto</span></h2>
+        <label>
+          Nome do produto
+          <input id="nome" class="big" type="text" maxlength="80" placeholder="Ex.: Pulseira de contas" autocomplete="off" />
+        </label>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">
+          <span><span class="dot lav">🧵</span>Materiais</span>
+          <button type="button" class="btn soft small" id="add-material">＋ Adicionar material</button>
+        </h2>
+        <div id="materiais" class="materiais"></div>
+        <p class="hint">
+          Custo = preço do pacote ÷ quantidade no pacote × quantidade usada.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title"><span><span class="dot mint">⏱️</span>Tempo de trabalho</span></h2>
+        <div class="time-row">
+          <label>
+            Tempo trabalhado
+            <input id="tempo" type="number" inputmode="decimal" min="0" step="any" placeholder="0" />
+          </label>
+          <label>
+            Unidade
+            <select id="unidade">
+              <option value="min">Minutos</option>
+              <option value="h">Horas</option>
+            </select>
+          </label>
+          <label>
+            Valor por hora (€)
+            <input id="valorHora" type="number" inputmode="decimal" min="0" step="any" placeholder="0,00" />
+          </label>
+        </div>
+        <p class="hint">O valor por hora fica guardado para os próximos produtos.</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title"><span><span class="dot peach">✨</span>Margem de lucro</span></h2>
+        <label>
+          Margem sobre o custo (%)
+          <input id="margem" type="number" inputmode="decimal" min="0" step="any" value="50" />
+        </label>
+      </div>
+    </div>
+
+    <aside class="sticky">
+      <div class="card result">
+        <div class="result-price">
+          <small>Preço de venda</small>
+          <output class="price" id="out-venda">0,00 €</output>
+        </div>
+        <div class="result-body">
+          <div class="bar" aria-hidden="true">
+            <span class="b1" id="bar-mat"></span>
+            <span class="b2" id="bar-mao"></span>
+            <span class="b3" id="bar-lucro"></span>
+          </div>
+          <ul class="legend">
+            <li><span><i style="background: var(--pink-d)"></i>Materiais</span><output id="out-mat">0,00 €</output></li>
+            <li><span><i style="background: var(--sky-d)"></i>Mão de obra</span><output id="out-mao">0,00 €</output></li>
+            <li><span><i style="background: var(--mint-d)"></i>Lucro</span><output id="out-lucro">0,00 €</output></li>
+            <li class="total"><span>Custo total</span><output id="out-custo">0,00 €</output></li>
+          </ul>
+          <span class="editing-tag" id="editing-tag">✏️ A editar produto guardado</span>
+          <div class="result-actions">
+            <button type="button" class="btn primary full" id="guardar">💾 Guardar produto</button>
+            <button type="button" class="btn full" id="novo">Limpar e começar de novo</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <template id="tpl-material">
+    <div class="material">
+      <label class="nome-field">
+        Material
+        <input name="nome" type="text" maxlength="60" placeholder="Ex.: Contas de vidro" autocomplete="off" />
+      </label>
+      <label>
+        Preço pacote (€)
+        <input name="preco" type="number" inputmode="decimal" min="0" step="any" placeholder="0,00" />
+      </label>
+      <label>
+        Qnt. no pacote
+        <input name="qntPacote" type="number" inputmode="decimal" min="0" step="any" placeholder="0" />
+      </label>
+      <label>
+        Qnt. usada
+        <input name="qntUsada" type="number" inputmode="decimal" min="0" step="any" placeholder="0" />
+      </label>
+      <div class="custo lbl">
+        Custo
+        <output class="row-custo">0,00 €</output>
+      </div>
+      <button type="button" class="icon-btn remove" aria-label="Remover material" title="Remover">🗑️</button>
+    </div>
+  </template>
+</Layout>
+
+<script>
+  import {
+    calcular,
+    formatEUR,
+    getProduto,
+    getValorHora,
+    num,
+    saveProduto,
+    setValorHora,
+    toast,
+    uid,
+    atualizarBadge,
+  } from '../scripts/lib.js';
+
+  const $ = (s, r = document) => r.querySelector(s);
+
+  const reduzMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const el = {
+    nome: $('#nome'),
+    tempo: $('#tempo'),
+    unidade: $('#unidade'),
+    valorHora: $('#valorHora'),
+    margem: $('#margem'),
+    lista: $('#materiais'),
+    tpl: $('#tpl-material'),
+    guardar: $('#guardar'),
+    novo: $('#novo'),
+    tag: $('#editing-tag'),
+  };
+
+  let editingId = null;
+  let criadoEm = null;
+
+  /* ---------- números animados ---------- */
+
+  function animarValor(output, para) {
+    const de = output._val ?? 0;
+    output._val = para;
+    cancelAnimationFrame(output._raf);
+    if (reduzMovimento || de === para) {
+      output.textContent = formatEUR(para);
+      return;
+    }
+    const inicio = performance.now();
+    const dur = 380;
+    const passo = (agora) => {
+      const t = Math.min((agora - inicio) / dur, 1);
+      const e = 1 - Math.pow(1 - t, 3);
+      output.textContent = formatEUR(de + (para - de) * e);
+      if (t < 1) output._raf = requestAnimationFrame(passo);
+    };
+    output._raf = requestAnimationFrame(passo);
+  }
+
+  /* ---------- materiais ---------- */
+
+  function mostrarVazio() {
+    const existe = $('.empty-materiais', el.lista);
+    const temLinhas = el.lista.querySelector('.material');
+    if (!temLinhas && !existe) {
+      const d = document.createElement('div');
+      d.className = 'empty-materiais';
+      d.textContent = 'Ainda não adicionaste materiais. Carrega em “Adicionar material”.';
+      el.lista.appendChild(d);
+    } else if (temLinhas && existe) {
+      existe.remove();
+    }
+  }
+
+  function addRow(dados = {}, foco = false) {
+    const frag = el.tpl.content.cloneNode(true);
+    const row = frag.querySelector('.material');
+    row.querySelector('[name=nome]').value = dados.nome ?? '';
+    row.querySelector('[name=preco]').value = dados.preco ?? '';
+    row.querySelector('[name=qntPacote]').value = dados.qntPacote ?? '';
+    row.querySelector('[name=qntUsada]').value = dados.qntUsada ?? '';
+
+    row.querySelector('.remove').addEventListener('click', () => {
+      row.classList.add('leaving');
+      const fim = () => {
+        row.remove();
+        mostrarVazio();
+        atualizar();
+      };
+      if (reduzMovimento) fim();
+      else row.addEventListener('animationend', fim, { once: true });
+    });
+
+    el.lista.appendChild(frag);
+    mostrarVazio();
+    if (foco) row.querySelector('[name=nome]').focus();
+    atualizar();
+  }
+
+  /* ---------- estado e cálculo ---------- */
+
+  function lerEstado() {
+    const materiais = [...el.lista.querySelectorAll('.material')].map((row) => ({
+      nome: row.querySelector('[name=nome]').value.trim(),
+      preco: row.querySelector('[name=preco]').value,
+      qntPacote: row.querySelector('[name=qntPacote]').value,
+      qntUsada: row.querySelector('[name=qntUsada]').value,
+    }));
+    return {
+      nome: el.nome.value.trim(),
+      materiais,
+      tempo: el.tempo.value,
+      unidade: el.unidade.value,
+      valorHora: el.valorHora.value,
+      margem: el.margem.value,
+    };
+  }
+
+  function atualizar() {
+    const estado = lerEstado();
+    const r = calcular(estado);
+
+    el.lista.querySelectorAll('.material').forEach((row, i) => {
+      row.querySelector('.row-custo').textContent = formatEUR(r.materiais[i]?.custo ?? 0);
+    });
+
+    animarValor($('#out-venda'), r.precoVenda);
+    animarValor($('#out-mat'), r.custoMateriais);
+    animarValor($('#out-mao'), r.custoMaoObra);
+    animarValor($('#out-lucro'), r.lucro);
+    animarValor($('#out-custo'), r.custoTotal);
+
+    const total = r.precoVenda || 0;
+    const pct = (v) => (total > 0 ? (v / total) * 100 : 0) + '%';
+    $('#bar-mat').style.width = pct(r.custoMateriais);
+    $('#bar-mao').style.width = pct(r.custoMaoObra);
+    $('#bar-lucro').style.width = pct(r.lucro);
+  }
+
+  /* ---------- guardar / novo ---------- */
+
+  function marcarEdicao(ativo) {
+    el.tag.classList.toggle('show', ativo);
+    el.guardar.textContent = ativo ? '💾 Guardar alterações' : '💾 Guardar produto';
+  }
+
+  function guardar() {
+    const estado = lerEstado();
+    if (!estado.nome) {
+      toast('Dá um nome ao produto primeiro 🏷️');
+      el.nome.focus();
+      return;
+    }
+    const r = calcular(estado);
+    if (r.custoTotal <= 0) {
+      toast('Adiciona pelo menos um custo (material ou tempo).');
+      return;
+    }
+
+    const agora = Date.now();
+    const id = editingId || uid();
+    saveProduto({
+      id,
+      ...estado,
+      criadoEm: criadoEm || agora,
+      atualizadoEm: agora,
+    });
+
+    const eraEdicao = Boolean(editingId);
+    editingId = id;
+    criadoEm = criadoEm || agora;
+    history.replaceState(null, '', `?id=${encodeURIComponent(id)}`);
+    marcarEdicao(true);
+    atualizarBadge();
+    toast(eraEdicao ? 'Alterações guardadas ✅' : 'Produto guardado ✅');
+  }
+
+  function limpar() {
+    editingId = null;
+    criadoEm = null;
+    el.nome.value = '';
+    el.tempo.value = '';
+    el.unidade.value = 'min';
+    el.margem.value = '50';
+    el.lista.innerHTML = '';
+    history.replaceState(null, '', location.pathname);
+    marcarEdicao(false);
+    addRow({}, false);
+    el.nome.focus();
+  }
+
+  /* ---------- eventos ---------- */
+
+  $('#add-material').addEventListener('click', () => addRow({}, true));
+  el.guardar.addEventListener('click', guardar);
+  el.novo.addEventListener('click', limpar);
+
+  document.addEventListener('input', (e) => {
+    if (e.target === el.valorHora) setValorHora(el.valorHora.value);
+    atualizar();
+  });
+  el.unidade.addEventListener('change', atualizar);
+
+  /* ---------- arranque ---------- */
+
+  const id = new URLSearchParams(location.search).get('id');
+  const existente = id ? getProduto(id) : null;
+
+  if (existente) {
+    editingId = existente.id;
+    criadoEm = existente.criadoEm;
+    el.nome.value = existente.nome ?? '';
+    el.tempo.value = existente.tempo ?? '';
+    el.unidade.value = existente.unidade ?? 'min';
+    el.valorHora.value = existente.valorHora ?? '';
+    el.margem.value = existente.margem ?? '50';
+    (existente.materiais || []).forEach((m) => addRow(m));
+    if (!(existente.materiais || []).length) mostrarVazio();
+    marcarEdicao(true);
+  } else {
+    if (id) toast('Produto não encontrado.');
+    el.valorHora.value = getValorHora();
+    addRow({}, false);
+  }
+  atualizar();
+</script>
